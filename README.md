@@ -8,7 +8,7 @@ Explain the use case of this processor in a TLDR fashion.
 ```
 PUT _ingest/pipeline/email-extract-pipeline
 {
-  "description": "A pipeline to do whatever",
+  "description": "Ingest processor that extracts emails and store it in an array of different fields",
   "processors": [
     {
       "email_extract" : {
@@ -55,6 +55,6 @@ bin/elasticsearch-plugin install file:///path/to/ingest-email-extract/build/dist
 
 ## Bugs & TODO
 
-* There are always bugs
-* and todos...
+* Add Link extraction
+
 
