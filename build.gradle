@@ -1,0 +1,140 @@
+import org.elasticsearch.gradle.testclusters.StandaloneRestIntegTestTask
+import org.gradle.api.tasks.Input;
+import org.gradle.process.CommandLineArgumentProvider;
+
+import java.nio.file.Files
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
+
+buildscript {
+    dependencies {
+        classpath "org.elasticsearch.gradle:build-tools:${elasticsearchVersion}"
+    }
+    repositories {
+        mavenCentral()
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+group = 'org.elasticsearch.plugin.ingest'
+version = '0.0.1-SNAPSHOT'
+
+apply plugin: 'java'
+apply plugin: 'idea'
+apply plugin: 'elasticsearch.esplugin'
+apply plugin: 'elasticsearch.testclusters'
+
+esplugin {
+    name = 'ingest-email-extract'
+    description = 'Ingest processor that extracts emails and store it in an array of different fields'
+    classname = 'org.elasticsearch.plugin.ingest.email.extract.IngestEmailExtractPlugin'
+    // license of the plugin, may be different than the above license
+    licenseFile = rootProject.file('LICENSE.txt')
+    // copyright notices, may be different than the above notice
+    noticeFile = rootProject.file('NOTICE.txt')
+}
+
+// In this section you declare the dependencies for your production and test code
+// Note, the two dependencies are not really needed as the buildscript dependency gets them in already
+// they are just here as an example
+dependencies {
+    implementation "org.elasticsearch:elasticsearch:${elasticsearchVersion}"
+    implementation 'org.nibor.autolink:autolink:0.10.0'
+    // the yaml tests require a log4j2 dependency, otherwise a dependency is thrown on startup
+    runtimeOnly 'org.apache.logging.log4j:log4j-core:2.11.1'
+}
+
+// ignore javadoc linting errors for now
+tasks.withType(Javadoc) {
+    options.addStringOption('Xdoclint:none', '-quiet')
+}
+
+// setup yaml rest tests
+testClusters {
+    yamlRestTest
+}
+
+sourceSets {
+    yamlRestTest
+}
+
+configurations {
+    yamlRestTestImplementation.extendsFrom testImplementation
+    yamlRestTestRuntimeOnly.extendsFrom testRuntimeOnly
+    restTestSpecs
+}
+
+tasks.register('copyRestTestSpecs', Copy) {
+    from zipTree(configurations.restTestSpecs.singleFile)
+    into "$buildDir/restResources/restspec"
+}
+
+TaskProvider<Zip> bundle = project.getTasks().withType(Zip.class).named("bundlePlugin");
+
+// Register rest resources with source set
+sourceSets.yamlRestTest.getOutput().dir("$buildDir/restResources/restspec");
+
+tasks.register('yamlRestTest', StandaloneRestIntegTestTask) { testTask ->
+    testTask.dependsOn(bundle, 'copyRestTestSpecs')
+
+    def cluster = testClusters.yamlRestTest
+    cluster.plugin(bundle.flatMap(AbstractArchiveTask::getArchiveFile))
+    testTask.useCluster(testClusters.yamlRestTest)
+
+    testTask.mustRunAfter(project.getTasks().named("test"))
+    testTask.setTestClassesDirs(sourceSets.yamlRestTest.getOutput().getClassesDirs())
+    testTask.setClasspath(sourceSets.yamlRestTest.getRuntimeClasspath())
+
+
+    SystemPropertyCommandLineArgumentProvider nonInputProperties = new SystemPropertyCommandLineArgumentProvider()
+    nonInputProperties.systemProperty("tests.rest.cluster", "${-> String.join(",", cluster.getAllHttpSocketURI())}")
+    nonInputProperties.systemProperty("tests.cluster", "${-> String.join(",", cluster.getAllTransportPortURI())}")
+    nonInputProperties.systemProperty("tests.clustername", "${-> cluster.getName()}")
+    testTask.getJvmArgumentProviders().add(nonInputProperties)
+    testTask.systemProperty("tests.rest.load_packaged", Boolean.FALSE.toString())
+}
+
+// this is a bit of a hack to make sure we run the test tests when releasing...
+check.dependsOn 'yamlRestTest'
+
+dependencies {
+    yamlRestTestImplementation "org.elasticsearch.test:framework:$elasticsearchVersion"
+    restTestSpecs "org.elasticsearch:rest-api-spec:$elasticsearchVersion"
+}
+
+// This will be available in 7.15 in build tools and not manually declared. 
+public class SystemPropertyCommandLineArgumentProvider implements CommandLineArgumentProvider {
+    private final Map<String, Object> systemProperties = new LinkedHashMap<>();
+
+    public void systemProperty(String key, Supplier<String> value) {
+        systemProperties.put(key, value);
+    }
+
+    public void systemProperty(String key, Object value) {
+        systemProperties.put(key, value);
+    }
+
+    @Override
+    public Iterable<String> asArguments() {
+        return systemProperties.entrySet()
+                .stream()
+                .map(
+                        entry -> "-D"
+                                + entry.getKey()
+                                + "="
+                                + (entry.getValue() instanceof Supplier ? ((Supplier) entry.getValue()).get() : entry.getValue())
+                )
+                .collect(Collectors.toList());
+    }
+
+    // Track system property keys as an input so our build cache key will change if we add properties but values are still ignored
+    @Input
+    public Iterable<String> getPropertyNames() {
+        return systemProperties.keySet();
+    }
+}
