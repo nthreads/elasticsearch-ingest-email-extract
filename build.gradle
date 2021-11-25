@@ -45,6 +45,8 @@ esplugin {
 dependencies {
     implementation "org.elasticsearch:elasticsearch:${elasticsearchVersion}"
     implementation 'org.nibor.autolink:autolink:0.10.0'
+    implementation 'org.apache.opennlp:opennlp-tools:1.9.3'
+
     // the yaml tests require a log4j2 dependency, otherwise a dependency is thrown on startup
     runtimeOnly 'org.apache.logging.log4j:log4j-core:2.11.1'
 }

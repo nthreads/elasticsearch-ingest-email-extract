@@ -20,7 +20,7 @@ PUT _ingest/pipeline/email-extract-pipeline
 
 PUT /my-index/my-type/1?pipeline=email-extract-pipeline
 {
-  "my_field" : "Some content"
+  "my_field" : "You can reach out to me at nauman@csms.ae or at nauman.zubair@gmail.com or commenting on www.nthreads.com"
 }
 
 GET /my-index/my-type/1
